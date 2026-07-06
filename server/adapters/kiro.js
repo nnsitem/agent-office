@@ -57,7 +57,7 @@ function start(emit) {
           const label = /skill/i.test(tool.data.name)
             ? '⚡ ' + (summarizeInput(tool.data.input) || tool.data.name)
             : tool.data.name + ': ' + summarizeInput(tool.data.input);
-          last = { kind: 'tool_use', at, activity: label };
+          last = { kind: 'tool_use', at, activity: label, tool: tool.data.name };
         } else {
           last = { kind: 'assistant', at, activity: last && last.activity };
         }
@@ -74,6 +74,7 @@ function start(emit) {
       lastEventKind: last.kind,
       lastEventAt: last.at,
       ...(last.activity ? { activity: last.activity } : {}),
+      ...(last.tool ? { lastTool: last.tool } : {}),
     });
   });
 }

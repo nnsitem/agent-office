@@ -21,6 +21,11 @@
   #counts { font-size:.8rem; color:#6a6a88; }
   #counts b { color:#d8d8e8; }
   header a { color:#5aa9ff; font-size:.8rem; margin-left:auto; text-decoration:none; }
+  #bell {
+    background:none; border:1px solid #33334d; border-radius:6px; color:#8f8fb0;
+    font:inherit; font-size:.75rem; padding:.15rem .6rem; cursor:pointer;
+  }
+  #bell.on { color:#ffd64a; border-color:#5a5230; }
 
   #app { flex:1; display:flex; min-height:0; }
 
@@ -94,6 +99,7 @@
   <h1>Agent Office</h1>
   <span id="counts">connecting…</span>
   <a href="/debug.html">debug view →</a>
+  <button id="bell" title="Notify when an agent needs permission">🔔 off</button>
 </header>
 <div id="app">
   <aside>
@@ -246,6 +252,46 @@ document.addEventListener('click', (e) => {
   }
 });
 
+// ---- desktop notifications when an agent starts waiting for permission ----
+const bell = document.getElementById('bell');
+let notifyOn = localStorage.getItem('ao-notify') === '1' && Notification.permission === 'granted';
+function updateBell() {
+  bell.textContent = notifyOn ? '🔔 on' : '🔔 off';
+  bell.classList.toggle('on', notifyOn);
+}
+updateBell();
+bell.addEventListener('click', async () => {
+  if (!notifyOn && Notification.permission !== 'granted') {
+    if (await Notification.requestPermission() !== 'granted') return;
+  }
+  notifyOn = !notifyOn;
+  localStorage.setItem('ao-notify', notifyOn ? '1' : '0');
+  updateBell();
+});
+
+function chime() {
+  try {
+    const ac = new (window.AudioContext || window.webkitAudioContext)();
+    const o = ac.createOscillator();
+    const g = ac.createGain();
+    o.connect(g); g.connect(ac.destination);
+    o.frequency.value = 880;
+    g.gain.setValueAtTime(0.06, ac.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.0001, ac.currentTime + 0.45);
+    o.start(); o.stop(ac.currentTime + 0.45);
+    setTimeout(() => ac.close(), 600);
+  } catch { /* audio unavailable — notification alone is fine */ }
+}
+
+function maybeNotify(prev, a) {
+  if (!notifyOn || a.status !== 'waiting' || (prev && prev.status === 'waiting')) return;
+  new Notification('Agent needs attention ❗', {
+    body: `${shortTitle(a)} — ${a.activity || 'waiting for permission'}`,
+    tag: a.id, // one live notification per agent, no stacking
+  });
+  chime();
+}
+
 const es = new EventSource('/events');
 es.onmessage = (e) => {
   scheduler.wake();
@@ -259,6 +305,7 @@ es.onmessage = (e) => {
     const ff = Number(new URLSearchParams(location.search).get('ff'));
     if (ff > 0) for (let i = 0; i < ff * 60; i++) sim.update(1 / 60);
   } else if (msg.type === 'agent') {
+    maybeNotify(agents.get(msg.agent.id), msg.agent);
     agents.set(msg.agent.id, msg.agent);
     sim.upsert(msg.agent);
   } else if (msg.type === 'remove') {

@@ -6,10 +6,20 @@
 const { isSourceAlive } = require('./procs');
 
 const WORKING_WINDOW_MS = 20_000;   // any event this recent => working
-const WAITING_AFTER_MS = 30_000;    // trailing tool_use older than this => waiting (permission?)
 const IDLE_AFTER_MS = 2 * 60_000;   // no events => idle
 const GONE_AFTER_MS = 10 * 60_000;  // stale => gone
 const REMOVE_AFTER_MS = 40 * 60_000; // drop from registry entirely
+
+// A trailing tool_use with no result usually means a permission prompt — but
+// some tools legitimately run for minutes. Threshold by tool class so a
+// 2-minute build doesn't cry wolf while a stuck 1-minute Edit still does.
+const LONG_TOOL_RE = /bash|shell|exec|agent|task|workflow|web|fetch|search|monitor|research/i;
+const WAIT_LONG_MS = 3 * 60_000;
+const WAIT_DEFAULT_MS = 45_000;
+
+function waitThreshold(agent) {
+  return LONG_TOOL_RE.test(agent.lastTool || '') ? WAIT_LONG_MS : WAIT_DEFAULT_MS;
+}
 
 const agents = new Map();
 const listeners = new Set();
@@ -26,9 +36,11 @@ function broadcast(msg) {
 function deriveStatus(agent, now) {
   const age = now - agent.lastEventAt;
   if (age > GONE_AFTER_MS || !isSourceAlive(agent.source)) return 'gone';
-  if (agent.lastEventKind === 'tool_use' && age > WAITING_AFTER_MS) return 'waiting';
-  if (age > IDLE_AFTER_MS) return 'idle';
-  if (agent.lastEventKind === 'prompt') return 'thinking';
+  if (agent.lastEventKind === 'tool_use') {
+    // tool in flight counts as working until it exceeds its class threshold
+    return age > waitThreshold(agent) ? 'waiting' : 'working';
+  }
+  if (agent.lastEventKind === 'prompt') return age > IDLE_AFTER_MS ? 'idle' : 'thinking';
   if (age <= WORKING_WINDOW_MS) return 'working';
   return 'idle';
 }

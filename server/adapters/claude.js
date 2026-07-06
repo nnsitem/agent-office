@@ -90,9 +90,20 @@ function start(emit) {
             : mcp
             ? '🔌 ' + mcp[1] + ': ' + mcp[2] + ' ' + summarizeInput(tool.input)
             : tool.name + ': ' + summarizeInput(tool.input);
-          last = { kind: 'tool_use', at, activity: prefix + label };
+          last = { kind: 'tool_use', at, activity: prefix + label, tool: tool.name };
+          // hysteresis: two consecutive edits must point at the same new
+          // subdir before the agent changes rooms (monorepos would flap)
           const wd = refineWorkdir(m.project, tool.input);
-          if (wd) m.workdir = wd;
+          if (wd && wd !== m.workdir) {
+            m.wdStreak = wd === m.wdCandidate ? m.wdStreak + 1 : 1;
+            m.wdCandidate = wd;
+            if (m.wdStreak >= 2 || !m.workdir) {
+              m.workdir = wd;
+              m.wdStreak = 0;
+            }
+          } else if (wd) {
+            m.wdStreak = 0;
+          }
         } else {
           last = { kind: 'assistant', at, activity: last && last.activity };
         }
@@ -116,6 +127,7 @@ function start(emit) {
         lastEventAt: last.at,
         // omit when unknown so a tool_result-only batch keeps the last activity
         ...(last.activity ? { activity: last.activity } : {}),
+        ...(last.tool ? { lastTool: last.tool } : {}),
       }),
     });
   });
