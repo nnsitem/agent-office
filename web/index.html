@@ -139,6 +139,10 @@ perfDetector.setEffectManager(effectManager);
 const fxParam = new URLSearchParams(location.search).get('fx');
 if (fxParam) perfDetector.forceTier(Number(fxParam));
 
+// ?hour=22 previews the office at any hour (lighting phases)
+const hourParam = new URLSearchParams(location.search).get('hour');
+if (hourParam != null) window.AO_FORCE_HOUR = Number(hourParam);
+
 const office = new window.Office.Office(canvas, sim, {
   scheduler: scheduler,
   effectManager: effectManager,

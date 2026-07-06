@@ -225,6 +225,97 @@
     ctx.fillRect(x + 6, y - 2, 3, 2);
   }
 
+  // ---- per-room furniture: each room gets one distinctive piece ----
+
+  function drawSofa(ctx, x, y, accent) {
+    ctx.fillStyle = C.deskShadow;
+    ctx.fillRect(x + 2, y + 12, 32, 3);
+    ctx.fillStyle = accent;
+    ctx.fillRect(x, y, 32, 12); // body
+    ctx.fillStyle = 'rgba(255,255,255,0.18)';
+    ctx.fillRect(x + 2, y + 2, 13, 5); // cushions
+    ctx.fillRect(x + 17, y + 2, 13, 5);
+    ctx.fillStyle = 'rgba(0,0,0,0.25)';
+    ctx.fillRect(x, y + 10, 32, 2); // base shade
+    ctx.fillRect(x - 2, y, 3, 12);  // arms
+    ctx.fillRect(x + 31, y, 3, 12);
+  }
+
+  function drawCabinets(ctx, x, y) {
+    for (let k = 0; k < 2; k++) {
+      const cx = x + k * 16;
+      ctx.fillStyle = C.deskShadow;
+      ctx.fillRect(cx + 1, y + 17, 13, 2);
+      ctx.fillStyle = '#7a8194';
+      ctx.fillRect(cx, y, 13, 18);
+      ctx.fillStyle = '#8f96aa';
+      ctx.fillRect(cx, y, 13, 3);
+      ctx.fillStyle = '#525868';
+      for (let dr = 0; dr < 3; dr++) {
+        ctx.fillRect(cx + 2, y + 4 + dr * 5, 9, 1);
+        ctx.fillRect(cx + 5, y + 6 + dr * 5, 3, 1); // handle
+      }
+    }
+  }
+
+  function drawFloorLamp(ctx, x, y) {
+    ctx.fillStyle = C.deskShadow;
+    ctx.fillRect(x - 3, y + 20, 12, 2);
+    ctx.fillStyle = '#3a3d4a';
+    ctx.fillRect(x + 2, y, 2, 20);      // pole
+    ctx.fillRect(x - 2, y + 19, 10, 2); // base
+    ctx.fillStyle = '#ffd98f';
+    ctx.fillRect(x - 3, y - 8, 12, 9);  // shade
+    ctx.fillStyle = '#e8b96a';
+    ctx.fillRect(x - 3, y - 8, 12, 2);
+  }
+
+  function drawServerRack(ctx, x, y) {
+    ctx.fillStyle = C.deskShadow;
+    ctx.fillRect(x + 2, y + 26, 18, 3);
+    ctx.fillStyle = '#23252f';
+    ctx.fillRect(x, y, 18, 27);
+    ctx.fillStyle = '#31343f';
+    ctx.fillRect(x, y, 18, 3);
+    for (let u = 0; u < 5; u++) {
+      ctx.fillStyle = '#161821';
+      ctx.fillRect(x + 2, y + 5 + u * 4, 14, 3);
+      ctx.fillStyle = u % 2 ? '#7ee08a' : '#ffb84d'; // status LEDs
+      ctx.fillRect(x + 13, y + 6 + u * 4, 2, 1);
+      ctx.fillStyle = '#5aa9ff';
+      ctx.fillRect(x + 3, y + 6 + u * 4, 1, 1);
+    }
+  }
+
+  function drawPoster(ctx, x, y, accent) {
+    ctx.fillStyle = C.boardShadow;
+    ctx.fillRect(x + 1, y + 1, 12, 15);
+    ctx.fillStyle = '#e8e8f0';
+    ctx.fillRect(x, y, 12, 15);
+    ctx.fillStyle = accent;
+    ctx.fillRect(x + 2, y + 2, 8, 7);
+    ctx.fillStyle = '#8a8a9a';
+    ctx.fillRect(x + 2, y + 11, 8, 1);
+    ctx.fillRect(x + 2, y + 13, 5, 1);
+  }
+
+  function drawCoffeeStation(ctx, x, y) {
+    ctx.fillStyle = C.deskShadow;
+    ctx.fillRect(x + 2, y + 14, 24, 3);
+    ctx.fillStyle = C.deskWood;
+    ctx.fillRect(x, y + 6, 24, 9);  // table
+    ctx.fillStyle = C.deskTop;
+    ctx.fillRect(x, y + 4, 24, 4);
+    ctx.fillStyle = '#2a2d38';
+    ctx.fillRect(x + 3, y - 6, 10, 11); // machine
+    ctx.fillStyle = '#c25b4e';
+    ctx.fillRect(x + 5, y - 4, 6, 3);   // button panel
+    ctx.fillStyle = '#e8e8f0';
+    ctx.fillRect(x + 16, y, 4, 4);      // cup
+    ctx.fillStyle = '#8a5a35';
+    ctx.fillRect(x + 17, y + 1, 2, 1);
+  }
+
   function drawDesk(ctx, d) {
     const x = d.tx * TILE - 8;
     const y = d.ty * TILE;
@@ -374,6 +465,30 @@
       ctx.fillRect(x + 6, y + h - 7, w - 12, 1);
       ctx.fillRect(x + 6, y + 6, 1, h - 12);
       ctx.fillRect(x + w - 7, y + 6, 1, h - 12);
+      // Per-room rug pattern so each room reads differently at a glance
+      if (i === 0) { // diagonal dashes
+        for (let py = y + 9; py < y + h - 9; py += 7) {
+          for (let px = x + 10 + (py % 14 ? 4 : 0); px < x + w - 10; px += 12) {
+            ctx.fillRect(px, py, 4, 1);
+          }
+        }
+      } else if (i === 1) { // horizontal stripes
+        for (let py = y + 10; py < y + h - 10; py += 8) {
+          ctx.fillRect(x + 8, py, w - 16, 1);
+        }
+      } else if (i === 2) { // diamond dots
+        for (let py = y + 9; py < y + h - 9; py += 8) {
+          for (let px = x + 10 + ((py - y) % 16 ? 4 : 0); px < x + w - 10; px += 9) {
+            ctx.fillRect(px, py, 2, 2);
+          }
+        }
+      } else { // checker corners
+        for (let py = y + 8; py < y + h - 8; py += 10) {
+          for (let px = x + 10; px < x + w - 10; px += 14) {
+            ctx.fillRect(px, py, 5, 3);
+          }
+        }
+      }
       // Top/bottom decorative dots
       for (let px = x + 10; px < x + w - 10; px += 8) {
         ctx.fillRect(px, y + 4, 3, 1);
@@ -464,7 +579,7 @@
 
     // rooms: free-standing walled boxes with a doorway gap on the
     // corridor-facing edge, plus decorations
-    layout.rooms.forEach((r) => {
+    layout.rooms.forEach((r, i) => {
       const x1 = r.x1 * TILE;
       const x2 = r.x2 * TILE;
       const y1 = r.y1 * TILE;
@@ -478,10 +593,21 @@
       } else {
         drawWhiteboard(ctx, x1 + TILE, y1); // on the gapped wall, clear of the gap
       }
+      // a poster on the wall, tinted with the room's rug accent
+      const accent = RUGS[i % RUGS.length].fill;
+      drawPoster(ctx, i === 1 ? x1 + 10 : x2 - 22, y1 + 8, accent);
+      // one distinctive furniture piece per room, on floor the walk paths
+      // never cross (top strip for top rooms, bottom strip for bottom rooms)
+      if (i === 0) drawSofa(ctx, x1 + 10, y1 + 12, RUGS[0].edge);
+      else if (i === 1) drawCabinets(ctx, x2 - 48, y1 + 6);
+      else if (i === 2) drawFloorLamp(ctx, x1 + 12, y2 - 30);
+      else drawServerRack(ctx, x2 - 26, y2 - 36);
       for (const d of r.desks) drawDesk(ctx, d);
     });
 
-    for (const [px, py] of [[0.9, 2.8], [28.2, 2.8], [0.9, 17.7], [28.2, 17.7], [12.4, 18], [16.7, 18]]) {
+    // coffee corner by the door instead of a second door plant
+    drawCoffeeStation(ctx, 17 * TILE, 18 * TILE);
+    for (const [px, py] of [[0.9, 2.8], [28.2, 2.8], [0.9, 17.7], [28.2, 17.7], [12.4, 18]]) {
       drawPlant(ctx, px * TILE, py * TILE);
     }
 
@@ -672,7 +798,7 @@
         });
         this.effectManager.initDesks(desks);
 
-        const plants = [[0.9, 2.8], [28.2, 2.8], [0.9, 17.7], [28.2, 17.7], [12.4, 18], [16.7, 18]];
+        const plants = [[0.9, 2.8], [28.2, 2.8], [0.9, 17.7], [28.2, 17.7], [12.4, 18]];
         this.effectManager.initPlants(plants.map(([px, py]) => ({ x: px * TILE + 2, y: py * TILE })));
 
         // Sparkle timer tracking
@@ -929,6 +1055,14 @@
           const frameKey = c.animState ? c.animState.currentFrame() : c.frame();
           const y = Math.round(c.y + bob);
           const x = Math.round(c.x);
+
+          // grounding shadow — anchored to the floor, not the bobbing sprite
+          const sb = spriteBox(c);
+          cctx.fillStyle = 'rgba(18,18,30,0.28)';
+          cctx.beginPath();
+          cctx.ellipse(sb.x + sb.w / 2, c.y + (c.agent.isSubagent ? 16 : sb.h) - 1,
+            sb.w / 2 + 1, 2.6, 0, 0, Math.PI * 2);
+          cctx.fill();
 
           if (c.id === this.selectedId) {
             const bx = spriteBox(c);

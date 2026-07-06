@@ -152,27 +152,83 @@
       }
     }
 
+    // World geometry the lighting scene needs (world px, 480x320)
+    var WINDOW_XS = [5 * 16, 12 * 16, 19 * 16, 26 * 16];
+    var CEILING_LAMPS = [[232, 90], [232, 170], [232, 250], [80, 168], [400, 168]];
+
+    function timePhase() {
+      var hour = (window.AO_FORCE_HOUR != null)
+        ? Number(window.AO_FORCE_HOUR)
+        : new Date().getHours() + new Date().getMinutes() / 60;
+      if (hour >= 6 && hour < 9) return 'morning';
+      if (hour >= 9 && hour < 16) return 'day';
+      if (hour >= 16 && hour < 20) return 'evening';
+      return 'night';
+    }
+
+    function glow(ctx, cx, cy, r, color, alpha) {
+      var g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+      g.addColorStop(0, color);
+      g.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = g;
+      ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
+      ctx.globalAlpha = 1;
+    }
+
     function drawLighting(ctx, chars, desks) {
       if (tier < 2) return;
 
-      // Day/night tint
-      var now = new Date();
-      var hour = now.getHours() + now.getMinutes() / 60;
-      var opacity = 0.14;
-      var tint;
-      if (hour >= 6 && hour <= 18) {
-        tint = 'rgba(80,120,180,' + opacity + ')';
-      } else {
-        tint = 'rgba(220,160,60,' + opacity + ')';
-      }
-      ctx.fillStyle = tint;
-      ctx.fillRect(0, 0, 480, 320);
+      var phase = timePhase();
+      var night = phase === 'night';
 
-      // Desk lamp glow
+      // Ambient tint per phase — day is untinted, night is cool and dark
+      var tints = {
+        morning: 'rgba(255,196,130,0.07)',
+        day: null,
+        evening: 'rgba(255,150,64,0.12)',
+        night: 'rgba(28,38,80,0.30)',
+      };
+      if (tints[phase]) {
+        ctx.fillStyle = tints[phase];
+        ctx.fillRect(0, 0, 480, 320);
+      }
+
+      // Sunlight through the windows (morning/day/evening)
+      if (!night) {
+        var sun = phase === 'evening' ? 'rgba(255,180,90,1)' : 'rgba(255,244,214,1)';
+        var sunAlpha = phase === 'day' ? 0.11 : 0.08;
+        for (var i = 0; i < WINDOW_XS.length; i++) {
+          var wx = WINDOW_XS[i] + 14; // window center
+          var g = ctx.createLinearGradient(0, 24, 0, 78);
+          g.addColorStop(0, sun);
+          g.addColorStop(1, 'rgba(255,244,214,0)');
+          ctx.globalAlpha = sunAlpha;
+          ctx.fillStyle = g;
+          // slightly widening shaft
+          ctx.beginPath();
+          ctx.moveTo(wx - 14, 24);
+          ctx.lineTo(wx + 14, 24);
+          ctx.lineTo(wx + 20, 78);
+          ctx.lineTo(wx - 20, 78);
+          ctx.closePath();
+          ctx.fill();
+          ctx.globalAlpha = 1;
+        }
+      }
+
+      // Ceiling lamps: warm pools in the corridors after dark
+      if (night || phase === 'evening') {
+        for (var i = 0; i < CEILING_LAMPS.length; i++) {
+          glow(ctx, CEILING_LAMPS[i][0], CEILING_LAMPS[i][1], 36,
+            'rgba(255,214,150,1)', night ? 0.16 : 0.08);
+        }
+      }
+
+      // Desk lamp glow at occupied desks — stronger at night
       if (desks && chars) {
         for (var i = 0; i < desks.length; i++) {
           var desk = desks[i];
-          // Check if desk has an occupant
           var occupied = desk.occupied || false;
           if (!occupied) {
             for (var j = 0; j < chars.length; j++) {
@@ -185,14 +241,16 @@
           if (!occupied) continue;
           var cx = desk.laptopX !== undefined ? desk.laptopX : (desk.x + 4);
           var cy = desk.laptopY !== undefined ? desk.laptopY : (desk.y + 2);
-          var gradient = ctx.createRadialGradient(cx, cy, 0, cx, cy, 40);
-          gradient.addColorStop(0, 'rgba(255,228,181,0.5)');
-          gradient.addColorStop(0.5, 'rgba(255,228,181,0.2)');
-          gradient.addColorStop(1, 'rgba(255,228,181,0)');
-          ctx.fillStyle = gradient;
-          ctx.fillRect(cx - 40, cy - 40, 80, 80);
+          glow(ctx, cx, cy, night ? 46 : 36, 'rgba(255,228,181,1)', night ? 0.42 : 0.26);
         }
       }
+
+      // Vignette — subtle depth at every hour
+      var v = ctx.createRadialGradient(240, 160, 150, 240, 160, 330);
+      v.addColorStop(0, 'rgba(0,0,0,0)');
+      v.addColorStop(1, night ? 'rgba(6,8,20,0.34)' : 'rgba(10,12,24,0.20)');
+      ctx.fillStyle = v;
+      ctx.fillRect(0, 0, 480, 320);
 
       // Status glow for working characters
       if (chars) {
