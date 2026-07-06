@@ -728,6 +728,98 @@
     ctx.fill();
   }
 
+  // ---- weather outside the windows ----
+
+  function timePhaseLocal() {
+    const hour = (window.AO_FORCE_HOUR != null)
+      ? Number(window.AO_FORCE_HOUR)
+      : new Date().getHours() + new Date().getMinutes() / 60;
+    if (hour >= 6 && hour < 9) return 'morning';
+    if (hour >= 9 && hour < 16) return 'day';
+    if (hour >= 16 && hour < 20) return 'evening';
+    return 'night';
+  }
+
+  // Deterministic fake weather that changes every ~2 hours. ?weather= forces.
+  function weatherNow() {
+    if (window.AO_FORCE_WEATHER) return window.AO_FORCE_WEATHER;
+    const d = new Date();
+    const seed = d.getFullYear() * 4000 + (d.getMonth() + 1) * 310 + d.getDate() * 12 + Math.floor(d.getHours() / 2);
+    const x = ((seed * 2654435761) >>> 0) % 100;
+    return x < 45 ? 'clear' : x < 75 ? 'cloudy' : 'rain';
+  }
+
+  const WINDOW_XS = [5 * TILE, 12 * TILE, 19 * TILE, 26 * TILE];
+  const STARS = [[3, 3], [9, 2], [15, 5], [22, 3], [25, 7], [6, 8], [18, 9], [12, 6]];
+
+  const SKY = {
+    morning: ['#f4b98a', '#a5cbe8'],
+    day: ['#7fb2d9', '#a5cbe8'],
+    evening: ['#e8895a', '#b06a92'],
+    night: ['#0e1830', '#1a2745'],
+  };
+
+  function drawWindowScenes(ctx, t) {
+    const phase = timePhaseLocal();
+    const weather = weatherNow();
+    const night = phase === 'night';
+    let [top, bottom] = SKY[phase];
+    if (!night && weather !== 'clear') { top = '#8a94a8'; bottom = '#a8b0c0'; }
+    if (!night && weather === 'rain') { top = '#6e7890'; bottom = '#8a94a8'; }
+
+    WINDOW_XS.forEach((x, idx) => {
+      const y = 12, w = 28, h = 14;
+      ctx.fillStyle = top;
+      ctx.fillRect(x, y, w, h);
+      ctx.fillStyle = bottom;
+      ctx.fillRect(x, y + 8, w, h - 8);
+
+      if (night) {
+        for (let s = 0; s < STARS.length; s++) {
+          const tw = 0.4 + 0.6 * Math.abs(Math.sin(t * 1.5 + s * 2 + idx));
+          ctx.fillStyle = `rgba(232,238,255,${tw.toFixed(2)})`;
+          ctx.fillRect(x + (STARS[s][0] + idx * 5) % (w - 2), y + STARS[s][1], 1, 1);
+        }
+        if (idx === 1 && weather !== 'rain') { // moon in one window
+          ctx.fillStyle = '#e8e8d8';
+          ctx.fillRect(x + 19, y + 2, 5, 5);
+          ctx.fillStyle = '#c8c8b8';
+          ctx.fillRect(x + 20, y + 4, 2, 2);
+        }
+      } else if (weather === 'clear' && idx === 2 && phase !== 'evening') {
+        ctx.fillStyle = '#ffe08a'; // sun in one window
+        ctx.fillRect(x + 20, y + 2, 5, 5);
+        ctx.fillStyle = '#fff0b8';
+        ctx.fillRect(x + 21, y + 3, 3, 3);
+      }
+
+      if (weather !== 'clear' || (!night && idx % 2 === 0)) {
+        // drifting clouds
+        const cc = weather === 'rain' ? 'rgba(90,98,116,0.9)'
+          : night ? 'rgba(60,70,100,0.8)' : 'rgba(255,255,255,0.85)';
+        ctx.fillStyle = cc;
+        for (let k = 0; k < (weather === 'clear' ? 1 : 2); k++) {
+          const drift = ((t * (3 + k) + idx * 17 + k * 23) % (w + 14)) - 12;
+          ctx.fillRect(x + drift, y + 2 + k * 5, 10, 3);
+          ctx.fillRect(x + drift + 2, y + 1 + k * 5, 6, 2);
+        }
+      }
+
+      if (weather === 'rain') {
+        ctx.fillStyle = 'rgba(190,208,230,0.7)';
+        for (let r = 0; r < 6; r++) {
+          const rx = (r * 5 + Math.floor(t * 26) * 2 + idx * 3) % w;
+          const ry = (r * 4 + t * 60) % h;
+          ctx.fillRect(x + rx, y + ry, 1, 3);
+        }
+      }
+
+      // window cross-frame back on top
+      ctx.fillStyle = '#e8e8f0';
+      ctx.fillRect(x + 13, y, 2, h);
+    });
+  }
+
   function spriteBox(c) {
     return c.agent.isSubagent
       ? { x: c.x + 4, y: c.y + 8, w: 8, h: 8 }
@@ -912,6 +1004,10 @@
       const ctx = this.ctx;
       ctx.imageSmoothingEnabled = false;
       ctx.drawImage(this.bg, 0, 0, W, H, 0, 0, W * S, H * S);
+      ctx.save();
+      ctx.scale(S, S);
+      drawWindowScenes(ctx, performance.now() / 1000);
+      ctx.restore();
 
       const labels = this.sim.roomLabels();
       window.Sim.LAYOUT.rooms.forEach((r, i) => {
@@ -1044,10 +1140,11 @@
         this.effectManager.drawLighting(lctx, charsForLight, desks);
       }
 
-      // Character layer
+      // Character layer (windows animate here too — they sit above bg)
       if (dirty.has('chars')) {
         const cctx = this.charCanvas.getContext('2d');
         cctx.clearRect(0, 0, W, H);
+        drawWindowScenes(cctx, performance.now() / 1000);
         const chars = [...this.sim.chars.values()].sort((a, b) => a.y - b.y);
         for (const c of chars) {
           const set = this.sprites[c.agent.source] || this.sprites.claude;
@@ -1129,6 +1226,11 @@
           const bob = c.animState ? c.animState.currentBob() : c.bob();
           const cx = b.x + b.w / 2;
           const top = b.y + bob;
+          if (c.excursion) {
+            // coffee break: a ☕ while sipping, and no Zz at the machine
+            if (c.excursion.state === 'sipping') drawBubble(ctx, cx, top, '☕');
+            continue;
+          }
           const st = c.agent.status;
           const stagger = (Math.floor(c.x / TILE) % 2) * 15;
           if (st === 'working' && c.agent.activity) {

@@ -139,9 +139,12 @@ perfDetector.setEffectManager(effectManager);
 const fxParam = new URLSearchParams(location.search).get('fx');
 if (fxParam) perfDetector.forceTier(Number(fxParam));
 
-// ?hour=22 previews the office at any hour (lighting phases)
-const hourParam = new URLSearchParams(location.search).get('hour');
-if (hourParam != null) window.AO_FORCE_HOUR = Number(hourParam);
+// preview params: ?hour=22 (lighting phase), ?weather=rain|cloudy|clear,
+// ?coffee=1 (idle agents take coffee breaks almost immediately)
+const params = new URLSearchParams(location.search);
+if (params.get('hour') != null) window.AO_FORCE_HOUR = Number(params.get('hour'));
+if (params.get('weather')) window.AO_FORCE_WEATHER = params.get('weather');
+if (params.get('coffee')) window.AO_COFFEE_FAST = true;
 
 const office = new window.Office.Office(canvas, sim, {
   scheduler: scheduler,

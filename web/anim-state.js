@@ -38,6 +38,9 @@
         return walkIdx === 0 ? 'walk1' : 'walk2';
       }
 
+      // on a coffee break: stand upright (don't nap at the machine)
+      if (character.excursion) return 'stand';
+
       var status = getStatus();
 
       if (isAtDesk()) {

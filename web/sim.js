@@ -85,8 +85,80 @@ class Character {
     this._segProgress = 0;
     // Brief pause at waypoints (corridor junctions)
     this._waypointPause = 0;
+    // Coffee breaks: idle characters wander to the machine now and then
+    this.excursion = null; // null | {state: 'going'|'sipping'|'returning', timer}
+    // AO_COFFEE_FAST is a debug hook (?coffee=1) for previewing breaks
+    this.coffeeCooldown = window.AO_COFFEE_FAST ? 2 + Math.random() * 3 : 45 + Math.random() * 75;
     // Animation state machine (if available)
     this.animState = window.AnimState ? window.AnimState.create(this) : null;
+  }
+
+  setPath(points) {
+    this.path = points;
+    this._segStart = { x: this.x, y: this.y };
+    this._segEnd = points.length > 0 ? points[0] : { x: this.x, y: this.y };
+    this._segLen = dist(this._segStart, this._segEnd);
+    this._segProgress = 0;
+  }
+
+  coffeeSpot() {
+    let h = 0;
+    for (let i = 0; i < this.id.length; i++) h = (h * 31 + this.id.charCodeAt(i)) >>> 0;
+    return { x: 250 - (h % 2) * 12, y: 284 };
+  }
+
+  _returnToDesk() {
+    this.excursion = { state: 'returning', timer: 0 };
+    const gx = this.room.gapX - TILE / 2;
+    const dest = this.desk ? deskPos(this.desk) : { x: gx, y: this.y };
+    const pts = [];
+    if (Math.abs(this.x - gx) > 1) {
+      // somewhere in the corridors: back to the center column, up to the
+      // middle corridor, across to the room's doorway column
+      if (this.y > LAYOUT.midY + 1) {
+        pts.push({ x: LAYOUT.centerX, y: this.y }, { x: LAYOUT.centerX, y: LAYOUT.midY });
+      }
+      pts.push({ x: gx, y: LAYOUT.midY });
+    }
+    pts.push({ x: gx, y: dest.y }, { x: dest.x, y: dest.y });
+    this.setPath(pts);
+  }
+
+  _updateExcursion(dt) {
+    const st = this.agent.status;
+    if (!this.excursion) {
+      if (st !== 'idle' || this.phase !== 'atDesk' || this.walking ||
+          this.agent.isSubagent || !this.desk) return;
+      this.coffeeCooldown -= dt;
+      if (this.coffeeCooldown > 0) return;
+      const spot = this.coffeeSpot();
+      const gx = this.room.gapX - TILE / 2;
+      this.excursion = { state: 'going', timer: 0 };
+      this.setPath([
+        { x: gx, y: this.y },
+        { x: gx, y: LAYOUT.midY },
+        { x: LAYOUT.centerX, y: LAYOUT.midY },
+        { x: LAYOUT.centerX, y: spot.y },
+        { x: spot.x, y: spot.y },
+      ]);
+      return;
+    }
+    const e = this.excursion;
+    // real work arrived mid-break: head straight back
+    if (e.state !== 'returning' && st !== 'idle' && st !== 'gone') {
+      this._returnToDesk();
+      return;
+    }
+    if (e.state === 'going' && !this.walking) {
+      e.state = 'sipping';
+      e.timer = 4 + Math.random() * 4;
+    } else if (e.state === 'sipping') {
+      e.timer -= dt;
+      if (e.timer <= 0) this._returnToDesk();
+    } else if (e.state === 'returning' && !this.walking) {
+      this.excursion = null;
+      this.coffeeCooldown = 90 + Math.random() * 120;
+    }
   }
 
   leave() {
@@ -94,17 +166,22 @@ class Character {
     this.phase = 'leaving';
     this._waitingToEnter = false; // clear any entrance delay
     this._waypointPause = 0;
-    this.path = pathToDoor(this.room, { x: this.x, y: this.y });
-    this._segStart = { x: this.x, y: this.y };
-    this._segEnd = this.path.length > 0 ? this.path[0] : { x: this.x, y: this.y };
-    this._segLen = dist(this._segStart, this._segEnd);
-    this._segProgress = 0;
+    if (this.excursion) {
+      // already out in the corridors — walk straight out the door
+      this.excursion = null;
+      this.setPath([{ x: LAYOUT.centerX, y: this.y }, { x: LAYOUT.centerX, y: LAYOUT.door.y }]);
+      return;
+    }
+    this.setPath(pathToDoor(this.room, { x: this.x, y: this.y }));
   }
 
   update(dt) {
     this.animT += dt;
 
     if (this.agent.status === 'gone') this.leave();
+
+    // coffee-break behavior must tick before the idle perf skip below
+    if (this.phase !== 'leaving' && this.phase !== 'done') this._updateExcursion(dt);
 
     // Update animation state machine
     if (this.animState) {
@@ -269,7 +346,8 @@ class Sim {
       // project refined mid-session (e.g. Claude narrowed to a subdir):
       // walk over to the right room once the character is settled
       if (!agent.isSubagent && agent.project && oldProject &&
-          agent.project !== oldProject && existing.phase === 'atDesk') {
+          agent.project !== oldProject && existing.phase === 'atDesk' &&
+          !existing.excursion) {
         this.relocate(existing);
       }
       return;
