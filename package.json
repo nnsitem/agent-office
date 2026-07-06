@@ -1,0 +1,11 @@
+{
+  "name": "agent-office",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Pixel-art dashboard for monitoring AI coding agents (Claude Code, Kiro, Gemini, Codex)",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "docker": "docker compose up --build -d"
+  }
+}

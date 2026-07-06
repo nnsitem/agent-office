@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent Office — debug</title>
+<style>
+  :root { color-scheme: dark; }
+  body { background:#14141f; color:#d8d8e8; font:14px/1.5 ui-monospace, Menlo, monospace; margin:2rem; }
+  h1 { font-size:1.1rem; letter-spacing:.15em; text-transform:uppercase; color:#8f8fb0; }
+  table { border-collapse:collapse; width:100%; }
+  th, td { text-align:left; padding:.45rem .8rem; border-bottom:1px solid #26263a; vertical-align:top; }
+  th { color:#8f8fb0; font-weight:normal; font-size:.8rem; text-transform:uppercase; letter-spacing:.08em; }
+  .src { font-weight:bold; }
+  .src-claude { color:#ff9d5c; } .src-kiro { color:#c792ea; }
+  .src-gemini { color:#6cb2ff; } .src-codex { color:#7ee08a; }
+  .st { padding:.1rem .5rem; border-radius:.6rem; font-size:.8rem; }
+  .st-working { background:#1d3a24; color:#7ee08a; }
+  .st-thinking { background:#1d2a3a; color:#6cb2ff; }
+  .st-waiting { background:#3a2a1d; color:#ffb84d; }
+  .st-idle { background:#2a2a3a; color:#9a9ab8; }
+  .st-gone { background:#333; color:#777; }
+  .dim { color:#8f8fb0; }
+  #empty { color:#666; margin-top:2rem; }
+</style>
+</head>
+<body>
+<h1>Agent Office <span class="dim">/ M1 debug view</span></h1>
+<table id="tbl" hidden>
+  <thead><tr><th>agent</th><th>status</th><th>title</th><th>project</th><th>activity</th><th>last event</th><th>tokens</th></tr></thead>
+  <tbody id="rows"></tbody>
+</table>
+<p id="empty">No live agents yet — start a Claude / Kiro session and it will appear here.</p>
+<script>
+const agents = new Map();
+
+function render() {
+  const rows = document.getElementById('rows');
+  const list = [...agents.values()].sort((a, b) => b.lastEventAt - a.lastEventAt);
+  document.getElementById('tbl').hidden = list.length === 0;
+  document.getElementById('empty').hidden = list.length > 0;
+  rows.innerHTML = list.map(a => {
+    const age = Math.max(0, Math.round((Date.now() - a.lastEventAt) / 1000));
+    const ageStr = age < 60 ? age + 's ago' : Math.round(age / 60) + 'm ago';
+    const proj = a.project ? a.project.split('/').slice(-2).join('/') : '—';
+    const tok = a.tokens && (a.tokens.in || a.tokens.out) ? `${a.tokens.in}↓ ${a.tokens.out}↑` : '—';
+    return `<tr>
+      <td class="src src-${esc(a.source)}">${esc(a.source)}${a.isSubagent ? ' ⑂' : ''}</td>
+      <td><span class="st st-${esc(a.status)}">${esc(a.status)}</span></td>
+      <td>${esc(a.title || '—')}</td>
+      <td class="dim">${esc(proj)}</td>
+      <td>${esc(a.activity || '—')}</td>
+      <td class="dim">${ageStr}</td>
+      <td class="dim">${esc(tok)}</td>
+    </tr>`;
+  }).join('');
+}
+
+function esc(s) {
+  return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+}
+
+const es = new EventSource('/events');
+es.onmessage = (e) => {
+  const msg = JSON.parse(e.data);
+  if (msg.type === 'snapshot') {
+    agents.clear();
+    for (const a of msg.agents) agents.set(a.id, a);
+  } else if (msg.type === 'agent') {
+    agents.set(msg.agent.id, msg.agent);
+  } else if (msg.type === 'remove') {
+    agents.delete(msg.id);
+  }
+  render();
+};
+setInterval(render, 5000); // keep ages fresh
+</script>
+</body>
+</html>

@@ -1,0 +1,14 @@
+services:
+  agent-office:
+    build: .
+    container_name: agent-office
+    ports:
+      - "4321:4321"
+    volumes:
+      # read-only: the dashboard observes session files, never touches them
+      - ~/.claude:/data/claude:ro
+      - ~/.kiro:/data/kiro:ro
+      - ~/.gemini:/data/gemini:ro
+      # uncomment once GPT Codex CLI is installed:
+      # - ~/.codex:/data/codex:ro
+    restart: unless-stopped
