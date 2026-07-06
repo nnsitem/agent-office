@@ -30,6 +30,16 @@ function deskPos(desk) {
   return { x: desk.tx * TILE, y: (desk.ty + 1) * TILE };
 }
 
+function dist(a, b) {
+  var dx = b.x - a.x;
+  var dy = b.y - a.y;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
+function lerp(a, b, t) {
+  return a + (b - a) * t;
+}
+
 // Waypoints from the front door to a position inside a room.
 function pathToRoom(room, dest) {
   const gx = room.gapX - TILE / 2; // sprite-left so the sprite straddles the gap
@@ -57,46 +67,125 @@ class Character {
     this.id = agent.id;
     this.agent = agent;
     this.room = room;
-    this.x = LAYOUT.door.x;
+    this.x = LAYOUT.door.x + (Math.random() - 0.5) * 6;
     this.y = LAYOUT.door.y;
     this.phase = 'entering'; // entering | atDesk | leaving | done
     this.path = pathToRoom(room, dest);
     this.animT = Math.random() * 10;
     this.facing = 1;
+    // Varied walk speed per character (±15%)
+    this.walkSpeed = WALK_SPEED * (0.85 + Math.random() * 0.3);
+    // Staggered entrance: wait before starting to walk
+    this._entranceDelay = Math.random() * 1.8 + 0.2; // 0.2s to 2.0s delay
+    this._waitingToEnter = true;
+    // Eased walk tracking
+    this._segStart = { x: this.x, y: this.y };
+    this._segEnd = this.path.length > 0 ? this.path[0] : { x: this.x, y: this.y };
+    this._segLen = dist(this._segStart, this._segEnd);
+    this._segProgress = 0;
+    // Brief pause at waypoints (corridor junctions)
+    this._waypointPause = 0;
+    // Animation state machine (if available)
+    this.animState = window.AnimState ? window.AnimState.create(this) : null;
   }
 
   leave() {
     if (this.phase === 'leaving' || this.phase === 'done') return;
     this.phase = 'leaving';
+    this._waitingToEnter = false; // clear any entrance delay
+    this._waypointPause = 0;
     this.path = pathToDoor(this.room, { x: this.x, y: this.y });
+    this._segStart = { x: this.x, y: this.y };
+    this._segEnd = this.path.length > 0 ? this.path[0] : { x: this.x, y: this.y };
+    this._segLen = dist(this._segStart, this._segEnd);
+    this._segProgress = 0;
   }
 
   update(dt) {
     this.animT += dt;
+
     if (this.agent.status === 'gone') this.leave();
+
+    // Update animation state machine
+    if (this.animState) {
+      // Skip update for idle characters at desk (perf optimization)
+      if (this.path.length === 0 && this.phase === 'atDesk' &&
+          this.agent.status === 'idle' && !this.animState.isActive()) {
+        return;
+      }
+      this.animState.update(dt);
+    }
+
+    // Staggered entrance: wait at door before walking
+    if (this._waitingToEnter) {
+      this._entranceDelay -= dt;
+      if (this._entranceDelay > 0) return;
+      this._waitingToEnter = false;
+    }
+
     if (this.path.length === 0) return;
-    const t = this.path[0];
-    const step = WALK_SPEED * dt;
-    const dx = t.x - this.x;
-    const dy = t.y - this.y;
-    if (Math.abs(dx) > step) {
-      this.x += Math.sign(dx) * step;
-      this.facing = Math.sign(dx);
-    } else if (Math.abs(dy) > step) {
-      this.x = t.x;
-      this.y += Math.sign(dy) * step;
-    } else {
-      this.x = t.x;
-      this.y = t.y;
+
+    // Eased walk with per-character speed
+    var speed = this.walkSpeed || WALK_SPEED;
+    var segTime = this._segLen / speed;
+    if (segTime <= 0) {
+      // Zero-length segment, skip to next waypoint
+      this.x = this._segEnd.x;
+      this.y = this._segEnd.y;
       this.path.shift();
-      if (this.path.length === 0) {
+      if (this.path.length > 0) {
+        this._segStart = { x: this.x, y: this.y };
+        this._segEnd = this.path[0];
+        this._segLen = dist(this._segStart, this._segEnd);
+        this._segProgress = 0;
+      } else {
         this.phase = this.phase === 'leaving' ? 'done' : 'atDesk';
       }
+      return;
+    }
+
+    this._segProgress += dt / segTime;
+
+    if (this._segProgress >= 1) {
+      // Arrived at waypoint
+      this.x = this._segEnd.x;
+      this.y = this._segEnd.y;
+      this.path.shift();
+      if (this.path.length > 0) {
+        this._segStart = { x: this.x, y: this.y };
+        this._segEnd = this.path[0];
+        this._segLen = dist(this._segStart, this._segEnd);
+        this._segProgress = 0;
+      } else {
+        this.phase = this.phase === 'leaving' ? 'done' : 'atDesk';
+        this._segProgress = 0;
+      }
+    } else {
+      // Apply easing only at first and last segment; linear in between for smooth walking
+      var Ease = window.Ease;
+      var eased;
+      if (!Ease) {
+        eased = this._segProgress;
+      } else if (this.path.length === 0 && this._segProgress < 1) {
+        // Last segment: ease out (decelerate to stop)
+        eased = Ease.easeOutQuad(this._segProgress);
+      } else if (this.phase === 'entering' && this._segLen === dist({ x: LAYOUT.door.x, y: LAYOUT.door.y }, this._segEnd)) {
+        // First segment from door: ease in (accelerate from standstill)
+        eased = Ease.easeInQuad(this._segProgress);
+      } else {
+        // Middle segments: linear for constant speed (no jerky stops)
+        eased = this._segProgress;
+      }
+      this.x = lerp(this._segStart.x, this._segEnd.x, eased);
+      this.y = lerp(this._segStart.y, this._segEnd.y, eased);
+      // Update facing direction
+      var dx = this._segEnd.x - this._segStart.x;
+      if (Math.abs(dx) > 0.1) this.facing = dx > 0 ? 1 : -1;
     }
   }
 
   get walking() {
-    return this.path.length > 0;
+    return this.path.length > 0 && !this._waitingToEnter;
   }
 
   frame() {
@@ -169,7 +258,14 @@ class Sim {
     const existing = this.chars.get(agent.id);
     if (existing) {
       const oldProject = existing.agent.project;
+      const oldStatus = existing.agent.status;
       existing.agent = agent;
+
+      // Detect status change and trigger animation reaction
+      if (existing.animState && oldStatus !== agent.status) {
+        existing.animState.onStatusChange(oldStatus, agent.status);
+      }
+
       // project refined mid-session (e.g. Claude narrowed to a subdir):
       // walk over to the right room once the character is settled
       if (!agent.isSubagent && agent.project && oldProject &&
@@ -219,6 +315,10 @@ class Sim {
     out.splice(-1); // stop at (centerX, midY) instead of the front door
     const into = pathToRoom(room, dest);
     c.path = [...out, ...into];
+    c._segStart = { x: c.x, y: c.y };
+    c._segEnd = c.path.length > 0 ? c.path[0] : { x: c.x, y: c.y };
+    c._segLen = dist(c._segStart, c._segEnd);
+    c._segProgress = 0;
   }
 
   remove(id) {

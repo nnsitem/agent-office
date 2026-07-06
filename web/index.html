@@ -112,12 +112,32 @@
 </div>
 <div id="card" hidden></div>
 <script src="/sprites.js"></script>
+<script src="/ease.js"></script>
+<script src="/render-scheduler.js"></script>
+<script src="/perf-detect.js"></script>
+<script src="/effects.js"></script>
+<script src="/anim-state.js"></script>
 <script src="/sim.js"></script>
 <script src="/office.js"></script>
 <script>
 const sim = new window.Sim.Sim();
 const canvas = document.getElementById('office');
-const office = new window.Office.Office(canvas, sim);
+
+// Create performance infrastructure
+const scheduler = window.RenderScheduler.create();
+const effectManager = window.Effects.EffectManager(scheduler);
+const perfDetector = window.PerfDetect.create();
+perfDetector.setEffectManager(effectManager);
+
+// Check for ?fx= URL param to force tier
+const fxParam = new URLSearchParams(location.search).get('fx');
+if (fxParam) perfDetector.forceTier(Number(fxParam));
+
+const office = new window.Office.Office(canvas, sim, {
+  scheduler: scheduler,
+  effectManager: effectManager,
+  perfDetector: perfDetector
+});
 const ST_COLORS = window.Office.STATUS_COLORS;
 const SRC_COLORS = window.Sprites.SOURCE_COLORS;
 
@@ -208,6 +228,7 @@ function showCard(a, px, py) {
 }
 
 canvas.addEventListener('click', (e) => {
+  scheduler.wake();
   const r = canvas.getBoundingClientRect();
   const c = office.hitTest((e.clientX - r.left) * (canvas.width / r.width),
                            (e.clientY - r.top) * (canvas.height / r.height));
@@ -217,6 +238,8 @@ canvas.addEventListener('click', (e) => {
   showCard(c.agent, e.clientX + 14, e.clientY + 8);
   e.stopPropagation();
 });
+canvas.addEventListener('mousemove', () => scheduler.wake());
+canvas.addEventListener('mouseenter', () => scheduler.wake());
 document.addEventListener('click', (e) => {
   if (e.target !== canvas && !card.contains(e.target) && !e.target.closest('.agent-row')) {
     card.hidden = true;
@@ -225,6 +248,8 @@ document.addEventListener('click', (e) => {
 
 const es = new EventSource('/events');
 es.onmessage = (e) => {
+  scheduler.wake();
+  scheduler.markAllDirty();
   const msg = JSON.parse(e.data);
   if (msg.type === 'snapshot') {
     agents.clear();
